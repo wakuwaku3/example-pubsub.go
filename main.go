@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"log"
 	"os"
 	"sync"
@@ -23,9 +22,16 @@ func main() {
 	}
 	awsPrefix := os.Getenv("AWS_PREFIX")
 
-	subscriber := sub.NewSubscriber(client)
-	subscriber.SetHandler(awsPrefix+"Queue1", handleQueue1, &sub.HandlerOption{WaitTime: 0})
-	subscriber.SetHandler(awsPrefix+"Queue2", handleQueue2, &sub.HandlerOption{WaitTime: 0})
+	subscriber, err := sub.NewSubscriber(client, &sub.SubscriberOption{ConcurrencyMessageHandleLimit: 10})
+
+	if err := subscriber.SetHandler(awsPrefix+"Queue1", handleQueue1, &sub.HandlerOption{WaitTime: 0}); err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+	if err := subscriber.SetHandler(awsPrefix+"Queue2", handleQueue2, &sub.HandlerOption{WaitTime: 0}); err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
 
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
@@ -60,7 +66,7 @@ func main() {
 
 func handleQueue1(id string, message *string) error {
 	log.Print("handleQueue1", id, *message)
-	return errors.New("error handleQueue1")
+	return nil
 }
 func handleQueue2(id string, message *string) error {
 	log.Print("handleQueue2", id, *message)

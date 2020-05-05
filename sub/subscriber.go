@@ -15,6 +15,12 @@ type (
 			handler Handler
 			option  *HandlerOption
 		}
+		option    *SubscriberOption
+		semaphore chan int
+	}
+	// SubscriberOption は Subscriber の オプションです
+	SubscriberOption struct {
+		ConcurrencyMessageHandleLimit int
 	}
 	// HandlerOption は Handler の オプションです
 	HandlerOption struct {
@@ -22,7 +28,7 @@ type (
 	}
 	// Subscriber は メッセージを購読します
 	Subscriber interface {
-		SetHandler(queueName string, handler Handler, option *HandlerOption)
+		SetHandler(queueName string, handler Handler, option *HandlerOption) error
 		Subscribe() error
 	}
 	// Handler です
@@ -32,14 +38,20 @@ type (
 )
 
 // NewSubscriber はインスタンスを生成します
-func NewSubscriber(client aws.Client) Subscriber {
+func NewSubscriber(client aws.Client, option *SubscriberOption) (Subscriber, error) {
+	if option.ConcurrencyMessageHandleLimit < 1 {
+		return nil, errors.New("set 1 or more for ConcurrencyMessageHandleLimit")
+	}
 	return &subscriber{client, make(map[string]*struct {
 		handler Handler
 		option  *HandlerOption
-	})}
+	}), option, make(chan int, option.ConcurrencyMessageHandleLimit)}, nil
 }
 
-func (t *subscriber) SetHandler(queueName string, handler Handler, option *HandlerOption) {
+func (t *subscriber) SetHandler(queueName string, handler Handler, option *HandlerOption) error {
+	if option.WaitTime < 0 {
+		return errors.New("set 0 or more for WaitTime")
+	}
 	t.handlers[queueName] = &struct {
 		handler Handler
 		option  *HandlerOption
@@ -47,10 +59,10 @@ func (t *subscriber) SetHandler(queueName string, handler Handler, option *Handl
 		handler: handler,
 		option:  option,
 	}
+	return nil
 }
 func (t *subscriber) Subscribe() error {
 	chFatal := make(chan error)
-	semaphore := make(chan int, 10)
 	go func() {
 		defer func() {
 			if info := recover(); info != nil {
@@ -86,9 +98,9 @@ func (t *subscriber) Subscribe() error {
 									chFatal <- errors.New(fmt.Sprint(info))
 								}
 								wgMessage.Done()
-								<-semaphore
+								<-t.semaphore
 							}()
-							semaphore <- 1
+							t.semaphore <- 1
 							// execute handler
 							if err := handler.handler(msg.MessageID, msg.Body); err != nil {
 								if err := t.client.ReportFailureMessage(&aws.ReportFailureMessageArgs{

@@ -197,7 +197,7 @@ func (t *client) ReceiveMessages(args *ReceiveMessagesArgs) (*ReceiveMessagesRes
 	res, err := t.sqs.ReceiveMessage(&sqs.ReceiveMessageInput{
 		QueueUrl: &args.QueueID,
 		// 一度に取得する最大メッセージ数。最大でも10まで。
-		MaxNumberOfMessages: aws.Int64(10),
+		MaxNumberOfMessages: aws.Int64(1),
 		// これでキューが空の場合はロングポーリング(20秒間繋ぎっぱなし)になる。
 		WaitTimeSeconds: aws.Int64(20),
 	})
